@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>予定カレンダー</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;margin:0;background:#f5f5f7;color:#222}
+header{position:sticky;top:0;z-index:1000;background:#fff;border-bottom:1px solid #ddd;padding:12px 14px;isolation:isolate}
+h1{font-size:20px;margin:0 0 10px}
+.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button{border:0;border-radius:8px;padding:9px 12px;background:#333;color:#fff;font-size:14px}
+button.secondary{background:#e5e5ea;color:#222}
+.month-title{font-size:18px;font-weight:700;margin:14px 0 8px;text-align:center}
+.calendar{background:#fff;border:1px solid #ddd;border-radius:10px;overflow:visible}
+.weekdays,.grid{display:grid;grid-template-columns:repeat(7,1fr)}
+.weekday{font-size:11px;text-align:center;padding:6px 2px;background:#fafafa;border-bottom:1px solid #ddd}
+.cell{position:relative;min-height:78px;border-right:1px solid #eee;border-bottom:1px solid #eee;padding:3px 2px;overflow:visible}
+.cell:nth-child(7n){border-right:0}
+.date{font-size:11px;color:#555;height:17px}
+.other-month .date{color:#bbb}
+.today .date{font-weight:700;text-decoration:underline}
+.eventArea{position:absolute;left:3px;right:3px;top:21px;bottom:3px;overflow:visible}
+
+.eventLine{position:absolute;left:0;right:0;height:2px}
+.form{display:none;background:#fff;margin:12px 0;padding:14px;border-radius:10px;border:1px solid #ddd}
+.form.open{display:block}
+.form label{display:block;font-size:13px;font-weight:600;margin:9px 0 4px}
+input[type=text],input[type=date],input[type=url]{width:100%;padding:9px;border:1px solid #ccc;border-radius:7px;font-size:16px}
+.colors{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.color{height:30px;border-radius:6px;border:2px solid transparent}
+.color.selected{border-color:#111;box-shadow:0 0 0 2px #fff inset}
+.list{background:#fff;margin-top:14px;border-radius:10px;border:1px solid #ddd;padding:12px;position:relative;z-index:100}
+.list h2{font-size:16px;margin:0 0 8px}
+.item{display:flex;align-items:center;gap:7px;padding:9px 0;border-bottom:1px solid #eee}
+.item:last-child{border-bottom:0}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}
+.item-main{min-width:0;flex:1}
+.item-name{font-weight:700;font-size:14px}
+.item-sub{font-size:12px;color:#666;margin-top:2px}
+.item-actions{display:flex;gap:6px;flex:none;position:relative;z-index:100}
+.edit{background:#e5e5ea;color:#222;padding:8px 10px;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.delete{background:#e5e5ea;color:#c00;padding:8px 10px;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.wrap{max-width:900px;margin:auto;padding:0 8px 24px}
+.note{font-size:12px;color:#666;line-height:1.5;margin:8px 2px}
+@media(min-width:700px){.cell{min-height:90px}.eventLabel{font-size:11px}}
+
+.grid{display:block}
+.week-row{display:grid;grid-template-columns:repeat(7,1fr);position:relative}
+.eventLayer{position:absolute;z-index:20;pointer-events:none;overflow:visible}
+.eventBar{position:absolute;left:2px;right:2px;top:0;height:22px;border-radius:4px;overflow:hidden;background:rgba(255,255,255,.96)}
+.eventLabel{position:absolute;left:4px;right:4px;top:0;white-space:nowrap;overflow:hidden;text-overflow:clip;font-size:10px;font-weight:700;line-height:14px;padding:0 2px;background:transparent;z-index:21;pointer-events:none}
+.eventBarLine{position:absolute;left:0;right:0;bottom:0;height:3px;border-radius:2px}
+
+.item-url{font-size:10px;margin-top:5px}.item-url a{display:inline-block;color:#fff;text-decoration:none;font-weight:700;font-size:10px;line-height:1.2;padding:4px 7px;border-radius:5px;overflow-wrap:anywhere}
+</style>
+<meta name="theme-color" content="#f5f5f7">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icon-192.png">
+</head>
+<body>
+<header>
+  <div class="controls">
+    <button id="prev">‹ 前月</button>
+    <button id="todayBtn" class="secondary">今月</button>
+    <button id="next">次月 ›</button>
+    <button id="addBtn">予定を追加</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div id="form" class="form">
+    <label>予定名</label><input id="name" type="text" autocomplete="off">
+    <label>開始日</label><input id="start" type="date">
+    <label>終了日</label><input id="end" type="date">
+    <label>場所</label><input id="location" type="text" autocomplete="off">
+    <label>URL</label><input id="url" type="url" inputmode="url" placeholder="https://example.com" autocomplete="url">
+    <label>色</label>
+    <div id="colors" class="colors"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button id="save">登録</button><button id="cancel" class="secondary">キャンセル</button>
+    </div>
+  </div>
+
+  <div class="month-title" id="monthTitle"></div>
+  <div class="calendar">
+    <div class="weekdays">
+      <div class="weekday">日</div><div class="weekday">月</div><div class="weekday">火</div>
+      <div class="weekday">水</div><div class="weekday">木</div><div class="weekday">金</div><div class="weekday">土</div>
+    </div>
+    <div id="grid" class="grid"></div>
+  </div>
+
+  <div class="list">
+    <div id="list"></div>
+  </div>
+  <div class="note">※この版はWebサーバーを使わず、iPhone内だけで動作するようにしています。予定はこのページの保存領域に記録されます。</div>
+</div>
+
+<script>
+const COLORS=[
+ ['red','#C98F8F'],['orange','#D1A27E'],['yellow','#D5C77F'],['green','#9DB396'],
+ ['teal','#8FB8B2'],['blue','#91AEC5'],['indigo','#979FBE'],['purple','#AD9ABA'],
+ ['pink','#C69BAB'],['brown','#AD998A']
+];
+const KEY='iphone_exhibition_calendar_v2';
+let events=[];
+let editingId=null;
+let view=new Date();
+view.setDate(1);
+let selectedColor=COLORS[0][1];
+
+function load(){
+  try{ events=JSON.parse(localStorage.getItem(KEY)||'[]'); }catch(e){events=[]}
+  const today=new Date(); today.setHours(0,0,0,0);
+  events=events.filter(e=>new Date(e.end+'T00:00:00')>=today);
+  saveData();
+}
+function saveData(){
+  try{localStorage.setItem(KEY,JSON.stringify(events));}
+  catch(e){alert('予定の保存に失敗しました。iPhoneのブラウザ設定をご確認ください。');}
+}
+function fmt(s){return s.replaceAll('-','/')}
+function sameDay(a,b){return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate()}
+function dateOnly(y,m,d){return new Date(y,m,d)}
+function renderColors(){
+  const box=document.getElementById('colors'); box.innerHTML='';
+  COLORS.forEach(([n,c])=>{
+    const b=document.createElement('button'); b.type='button'; b.className='color'+(selectedColor===c?' selected':'');
+    b.style.background=c; b.title=n; b.onclick=()=>{selectedColor=c;renderColors()};
+    box.appendChild(b);
+  });
+}
+function renderCalendar(){
+  const grid=document.getElementById('grid');
+  grid.innerHTML='';
+  document.getElementById('monthTitle').textContent=view.getFullYear()+'年'+(view.getMonth()+1)+'月';
+
+  const y=view.getFullYear(), m=view.getMonth();
+  const first=new Date(y,m,1), start=new Date(y,m,1-first.getDay());
+  const today=new Date(); today.setHours(0,0,0,0);
+
+  for(let w=0;w<6;w++){
+    const week=document.createElement('div');
+    week.className='week-row';
+
+    for(let d=0;d<7;d++){
+      const date=new Date(start);
+      date.setDate(start.getDate()+w*7+d);
+
+      const cell=document.createElement('div');
+      cell.className='cell'+(date.getMonth()!==m?' other-month':'')+(sameDay(date,today)?' today':'');
+      cell.innerHTML='<div class="date">'+date.getDate()+'</div>';
+      week.appendChild(cell);
+    }
+
+    grid.appendChild(week);
+
+    const weekStart=new Date(start);
+    weekStart.setDate(start.getDate()+w*7);
+    weekStart.setHours(0,0,0,0);
+
+    const weekEnd=new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate()+6);
+    weekEnd.setHours(23,59,59,999);
+
+    const weekEvents=[...events]
+      .filter(e=>{
+        const s=new Date(e.start+'T00:00:00');
+        const en=new Date(e.end+'T23:59:59');
+        return en>=weekStart && s<=weekEnd;
+      })
+      .sort((a,b)=>a.start.localeCompare(b.start)||String(a.id).localeCompare(String(b.id)));
+
+    weekEvents.forEach((e,row)=>{
+      const s=new Date(e.start+'T00:00:00');
+      const en=new Date(e.end+'T23:59:59');
+
+      const startIndex=Math.max(0,Math.floor((s-weekStart)/86400000));
+      const endIndex=Math.min(6,Math.floor((en-weekStart)/86400000));
+
+      const layer=document.createElement('div');
+      layer.className='eventLayer';
+      layer.style.left=(startIndex*100/7)+'%';
+      layer.style.width=((endIndex-startIndex+1)*100/7)+'%';
+      layer.style.top=(28+row*24)+'px';
+      layer.style.height='22px';
+
+      const bar=document.createElement('div');
+      bar.className='eventBar';
+
+      const label=document.createElement('div');
+      label.className='eventLabel';
+      label.textContent=e.name;
+      label.style.color=e.color;
+
+      const line=document.createElement('div');
+      line.className='eventBarLine';
+      line.style.background=e.color;
+
+      bar.appendChild(label);
+      bar.appendChild(line);
+      layer.appendChild(bar);
+      week.appendChild(layer);
+    });
+
+    const minH=Math.max(78,54+weekEvents.length*24);
+    week.querySelectorAll('.cell').forEach(c=>c.style.minHeight=minH+'px');
+  }
+}
+
+function safeUrl(s){
+  if(!s) return '';
+  try{
+    const u=new URL(s);
+    return (u.protocol==='http:'||u.protocol==='https:') ? u.href : '';
+  }catch(e){return ''}
+}
+
+function renderList(){
+  const box=document.getElementById('list');
+  if(!events.length){
+    box.innerHTML='<div style="color:#888;font-size:13px">登録されている予定はありません。</div>';
+    return;
+  }
+  box.innerHTML='';
+
+  [...events].sort((a,b)=>a.start.localeCompare(b.start)).forEach(e=>{
+    const item=document.createElement('div');
+    item.className='item';
+
+    item.innerHTML=`<span class="dot" style="background:${e.color}"></span>
+      <div class="item-main">
+        <div class="item-name" style="color:${e.color}">${escapeHtml(e.name)}</div>
+        <div class="item-sub">${fmt(e.start)} ～ ${fmt(e.end)}${e.location?'　'+escapeHtml(e.location):''}</div>
+        ${safeUrl(e.url)?'<div class="item-url"><a style="background:'+escapeHtml(e.color)+'" href="'+escapeHtml(safeUrl(e.url))+'" target="_blank" rel="noopener noreferrer">Webサイトを開く</a></div>':''}
+      </div>`;
+
+    const actions=document.createElement('div');
+    actions.className='item-actions';
+
+    const edit=document.createElement('button');
+    edit.type='button';
+    edit.className='edit';
+    edit.textContent='編集';
+    edit.setAttribute('aria-label','この予定を編集');
+    edit.addEventListener('click',function(ev){
+      ev.preventDefault();
+      ev.stopPropagation();
+
+      editingId=e.id;
+      document.getElementById('name').value=e.name||'';
+      document.getElementById('start').value=e.start||'';
+      document.getElementById('end').value=e.end||'';
+      document.getElementById('location').value=e.location||'';
+      document.getElementById('url').value=e.url||'';
+      selectedColor=e.color||COLORS[0][1];
+      renderColors();
+
+      document.getElementById('save').textContent='更新';
+      document.getElementById('form').classList.add('open');
+      document.getElementById('name').focus();
+      window.scrollTo({top:0,behavior:'smooth'});
+    });
+
+    const del=document.createElement('button');
+    del.type='button';
+    del.className='delete';
+    del.textContent='削除';
+    del.setAttribute('aria-label','この予定を削除');
+    del.addEventListener('click',function(ev){
+      ev.preventDefault();
+      ev.stopPropagation();
+      events=events.filter(x=>String(x.id)!==String(e.id));
+      if(String(editingId)===String(e.id)) resetForm();
+      saveData();
+      renderAll();
+    });
+
+    actions.appendChild(edit);
+    actions.appendChild(del);
+    item.appendChild(actions);
+    box.appendChild(item);
+  });
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function resetForm(){
+  editingId=null;
+  document.getElementById('name').value='';
+  document.getElementById('start').value='';
+  document.getElementById('end').value='';
+  document.getElementById('location').value='';
+  document.getElementById('url').value='';
+  selectedColor=COLORS[0][1];
+  document.getElementById('save').textContent='登録';
+  renderColors();
+}
+function renderAll(){renderCalendar();renderList()}
+document.getElementById('addBtn').onclick=()=>{resetForm();document.getElementById('form').classList.add('open');document.getElementById('name').focus()};
+document.getElementById('cancel').onclick=()=>{resetForm();document.getElementById('form').classList.remove('open')};
+document.getElementById('save').onclick=()=>{
+  const name=document.getElementById('name').value.trim();
+  const start=document.getElementById('start').value;
+  const end=document.getElementById('end').value;
+  const location=document.getElementById('location').value.trim();
+  const url=document.getElementById('url').value.trim();
+
+  if(!name||!start||!end){
+    alert('予定名・開始日・終了日を入力してください。');
+    return;
+  }
+  if(start>end){
+    alert('終了日は開始日以降にしてください。');
+    return;
+  }
+
+  if(editingId!==null){
+    const index=events.findIndex(x=>String(x.id)===String(editingId));
+    if(index!==-1){
+      events[index]={
+        ...events[index],
+        name,
+        start,
+        end,
+        location,
+        url,
+        color:selectedColor
+      };
+    }
+  }else{
+    events.push({
+      id:Date.now()+Math.floor(Math.random()*1000),
+      name,
+      start,
+      end,
+      location,
+      url,
+      color:selectedColor
+    });
+  }
+
+  saveData();
+  resetForm();
+  document.getElementById('form').classList.remove('open');
+  renderAll();
+};
+document.getElementById('prev').onclick=()=>{view.setMonth(view.getMonth()-1);renderCalendar()};
+document.getElementById('next').onclick=()=>{view.setMonth(view.getMonth()+1);renderCalendar()};
+document.getElementById('todayBtn').onclick=()=>{view=new Date();view.setDate(1);renderCalendar()};
+
+load();renderColors();renderAll();
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./service-worker.js').catch(()=>{}));
+}
+</script>
+</body>
+</html>
