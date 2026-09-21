@@ -285,13 +285,11 @@ function importSharedEvent(){
     });
     saveData();
     renderAll();
-    alert('共有された予定をカレンダーに取り込みました。');
+    alert('共有された予定をカレンダーに取り込みました。\n\nホーム画面に追加する場合は、この共有URLを開いた状態のまま「ホーム画面に追加」してください。');
   }else{
-    alert('この予定はすでに登録されています。');
+    alert('この予定はこの画面にはすでに登録されています。\n\nホーム画面版に表示されない場合は、この共有URLを開いた状態で「ホーム画面に追加」してください。');
   }
-  history.replaceState(null,'',location.pathname+location.search);
 }
-
 function renderList(){
   const box=document.getElementById('list');
   if(!events.length){
@@ -481,6 +479,7 @@ document.getElementById('next').onclick=()=>{view.setMonth(view.getMonth()+1);re
 document.getElementById('todayBtn').onclick=()=>{view=new Date();view.setDate(1);renderCalendar()};
 
 load();renderColors();renderAll();importSharedEvent();
+window.addEventListener('hashchange',importSharedEvent);
 </script>
 <script>
 if ('serviceWorker' in navigator) {
