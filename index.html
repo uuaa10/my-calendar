@@ -56,6 +56,7 @@ input[type=text],input[type=date],input[type=url]{width:100%;padding:9px;border:
 .eventBarLine{position:absolute;left:0;right:0;bottom:0;height:3px;border-radius:2px}
 
 .item-url{font-size:10px;margin-top:5px}.item-url a{display:inline-block;color:#fff;text-decoration:none;font-weight:700;font-size:10px;line-height:1.2;padding:4px 7px;border-radius:5px;overflow-wrap:anywhere}
+.share{background:#e5e5ea;color:#222;padding:8px 10px;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 </style>
 <meta name="theme-color" content="#f5f5f7">
 <meta name="mobile-web-app-capable" content="yes">
@@ -69,6 +70,8 @@ input[type=text],input[type=date],input[type=url]{width:100%;padding:9px;border:
     <button id="todayBtn" class="secondary">今月</button>
     <button id="next">次月 ›</button>
     <button id="addBtn">予定を追加</button>
+    <button id="importBtn" class="secondary">予定を読み込む</button>
+    <input id="importFile" type="file" accept=".json,application/json" style="display:none">
   </div>
 </header>
 
@@ -221,6 +224,74 @@ function safeUrl(s){
   }catch(e){return ''}
 }
 
+
+function encodeSharedEvent(e){
+  const data={name:e.name||'',start:e.start||'',end:e.end||'',location:e.location||'',url:e.url||'',color:e.color||COLORS[0][1]};
+  const bytes=new TextEncoder().encode(JSON.stringify(data));
+  let binary='';
+  bytes.forEach(b=>binary+=String.fromCharCode(b));
+  return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function decodeSharedEvent(s){
+  try{
+    s=s.replace(/-/g,'+').replace(/_/g,'/');
+    while(s.length%4) s+='=';
+    const binary=atob(s);
+    const bytes=Uint8Array.from(binary,c=>c.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }catch(e){return null}
+}
+function makeShareUrl(e){
+  const u=new URL(location.href);
+  u.hash='event='+encodeSharedEvent(e);
+  return u.href;
+}
+async function shareEvent(e){
+  const shareUrl=makeShareUrl(e);
+  const data={title:e.name||'予定',text:'予定を共有します',url:shareUrl};
+  try{
+    if(navigator.share){
+      await navigator.share(data);
+    }else if(navigator.clipboard){
+      await navigator.clipboard.writeText(shareUrl);
+      alert('共有用URLをコピーしました。');
+    }else{
+      prompt('このURLをコピーして共有してください。',shareUrl);
+    }
+  }catch(err){
+    if(err && err.name!=='AbortError') prompt('このURLをコピーして共有してください。',shareUrl);
+  }
+}
+function importSharedEvent(){
+  const m=location.hash.match(/^#event=(.+)$/);
+  if(!m) return;
+  const e=decodeSharedEvent(m[1]);
+  if(!e || !e.name || !e.start || !e.end) return;
+
+  const duplicate=events.some(x =>
+    x.name===e.name && x.start===e.start && x.end===e.end &&
+    (x.location||'')===(e.location||'') && (x.url||'')===(e.url||'')
+  );
+
+  if(!duplicate){
+    events.push({
+      id:Date.now()+Math.floor(Math.random()*1000),
+      name:String(e.name),
+      start:String(e.start),
+      end:String(e.end),
+      location:String(e.location||''),
+      url:String(e.url||''),
+      color:COLORS.some(x=>x[1]===e.color)?e.color:COLORS[0][1]
+    });
+    saveData();
+    renderAll();
+    alert('共有された予定をカレンダーに取り込みました。');
+  }else{
+    alert('この予定はすでに登録されています。');
+  }
+  history.replaceState(null,'',location.pathname+location.search);
+}
+
 function renderList(){
   const box=document.getElementById('list');
   if(!events.length){
@@ -281,7 +352,19 @@ function renderList(){
       renderAll();
     });
 
+    const share=document.createElement('button');
+    share.type='button';
+    share.className='share';
+    share.textContent='共有';
+    share.setAttribute('aria-label','この予定を共有');
+    share.addEventListener('click',function(ev){
+      ev.preventDefault();
+      ev.stopPropagation();
+      shareEvent(e);
+    });
+
     actions.appendChild(edit);
+    actions.appendChild(share);
     actions.appendChild(del);
     item.appendChild(actions);
     box.appendChild(item);
@@ -299,7 +382,52 @@ function resetForm(){
   document.getElementById('save').textContent='登録';
   renderColors();
 }
+
+function importBackupFile(file){
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const data=JSON.parse(reader.result);
+      const incoming=Array.isArray(data) ? data : data.events;
+      if(!Array.isArray(incoming)) throw new Error('invalid');
+
+      let added=0, skipped=0;
+      incoming.forEach(e=>{
+        if(!e || !e.name || !e.start || !e.end){ skipped++; return; }
+        const duplicate=events.some(x=>
+          x.name===e.name && x.start===e.start && x.end===e.end &&
+          (x.location||'')===(e.location||'') && (x.url||'')===(e.url||'')
+        );
+        if(duplicate){ skipped++; return; }
+
+        events.push({
+          id:Date.now()+Math.floor(Math.random()*1000000)+added,
+          name:String(e.name),
+          start:String(e.start),
+          end:String(e.end),
+          location:String(e.location||''),
+          url:String(e.url||''),
+          color:COLORS.some(x=>x[1]===e.color) ? e.color : COLORS[0][1]
+        });
+        added++;
+      });
+
+      saveData();
+      renderAll();
+      alert(added+'件の予定を読み込みました。'+(skipped ? '\n'+skipped+'件は重複または不完全なため読み込みませんでした。' : ''));
+    }catch(err){
+      alert('バックアップファイルを読み込めませんでした。');
+    }finally{
+      document.getElementById('importFile').value='';
+    }
+  };
+  reader.readAsText(file);
+}
+
 function renderAll(){renderCalendar();renderList()}
+document.getElementById('importBtn').onclick=()=>document.getElementById('importFile').click();
+document.getElementById('importFile').addEventListener('change',e=>importBackupFile(e.target.files[0]));
 document.getElementById('addBtn').onclick=()=>{resetForm();document.getElementById('form').classList.add('open');document.getElementById('name').focus()};
 document.getElementById('cancel').onclick=()=>{resetForm();document.getElementById('form').classList.remove('open')};
 document.getElementById('save').onclick=()=>{
@@ -352,7 +480,7 @@ document.getElementById('prev').onclick=()=>{view.setMonth(view.getMonth()-1);re
 document.getElementById('next').onclick=()=>{view.setMonth(view.getMonth()+1);renderCalendar()};
 document.getElementById('todayBtn').onclick=()=>{view=new Date();view.setDate(1);renderCalendar()};
 
-load();renderColors();renderAll();
+load();renderColors();renderAll();importSharedEvent();
 </script>
 <script>
 if ('serviceWorker' in navigator) {
